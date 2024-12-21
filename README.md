@@ -1,6 +1,6 @@
 # win-open
 
-[![crates.io](https://img.shields.io/crates/v/open.svg)](https://crates.io/crates/win-open)
+[![crates.io](https://img.shields.io/crates/v/win-open.svg)](https://crates.io/crates/win-open)
 
 The `win-open` crate allows you to open files or URLs using the default program configured on your Windows system. It supports three shells: **Command Prompt**, **PowerShell**, and **NuShell**.
 
