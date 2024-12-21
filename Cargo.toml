@@ -1,0 +1,38 @@
+[package]
+name = "win-open"
+description = "Open a path or URL using the program configured on windows system"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/win-rs/win-open"
+repository = "https://github.com/win-rs/win-open"
+documentation = "https://docs.rs/win-open"
+keywords = ["open", "windows", "start", "launch", "win32"]
+authors = ["0xJWLabs <0xJWLabs@gmail.com>"]
+include = ["src/**/*", "LICENSE.md", "README.md"]
+
+[features]
+## If enabled, link to `system` on Windows and use `ShellExecuteW` intead of a command invocation
+## when launching something in 'detached' mode.
+## That way, it should be possible to open currently opened (for writing) files as well.
+## This feature is only effective on Windows.
+##
+## There may be other side-effects that when comparing to the command-based
+## opening of paths, which is why this feature is opt-in.
+shellexecute = []
+
+[dependencies]
+
+[[bin]]
+test = false
+doc = false
+name = "win-open"
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = [
+  "aarch64-pc-windows-msvc",
+  "i686-pc-windows-msvc",
+  "x86_64-pc-windows-msvc",
+]
