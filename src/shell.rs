@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use crate::error::WindowsShellError;
+use crate::error::{WindowsShellError, WindowsShellErrorKind, WindowsShellResult};
 
 #[derive(Debug, Copy, Clone)]
 pub enum WindowsShell {
@@ -23,12 +23,15 @@ impl WindowsShell {
 impl TryInto<WindowsShell> for &str {
     type Error = WindowsShellError;
 
-    fn try_into(self) -> Result<WindowsShell> {
+    fn try_into(self) -> WindowsShellResult<WindowsShell> {
         match self.to_ascii_uppercase().as_str() {
             "PWSH" | "POWERSHELL" => Ok(WindowsShell::Powershell),
             "NU" | "NUSHELL" => Ok(WindowsShell::Nushell),
             "CMD" | "COMMANDPROMPT" => Ok(WindowsShell::Cmd),
-            _ => Err(WindowsShellError::ShellNotFound(self.to_string())),
+            _ => Err(WindowsShellError::new(
+                WindowsShellErrorKind::SHELL_NOT_FOUND,
+                self,
+            )),
         }
     }
 }
@@ -36,9 +39,7 @@ impl TryInto<WindowsShell> for &str {
 impl FromStr for WindowsShell {
     type Err = WindowsShellError;
 
-    fn from_str(shell: &str) -> Result<Self> {
+    fn from_str(shell: &str) -> WindowsShellResult<Self> {
         shell.try_into()
     }
 }
-
-pub type Result<T> = std::result::Result<T, WindowsShellError>;

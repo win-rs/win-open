@@ -78,9 +78,9 @@ use std::{
 };
 
 pub use error::WindowsShellError;
+use error::WindowsShellErrorKind;
+pub use error::WindowsShellResult;
 pub use shell::WindowsShell;
-
-use shell::Result;
 
 mod error;
 mod shell;
@@ -110,7 +110,7 @@ static DETECTED_SHELL: OnceLock<WindowsShell> = OnceLock::new();
 ///
 /// Sometimes, depending on the platform and system configuration, launchers *can* block.
 /// If you want to be sure they don't, use [`that_in_background()`] or [`that_detached`] instead.
-pub fn that(path: impl AsRef<OsStr>) -> Result<()> {
+pub fn that(path: impl AsRef<OsStr>) -> WindowsShellResult<()> {
     let mut last_err = None;
     for mut cmd in commands(path) {
         match cmd.status_without_output() {
@@ -120,7 +120,10 @@ pub fn that(path: impl AsRef<OsStr>) -> Result<()> {
             Err(err) => last_err = Some(err),
         }
     }
-    Err(last_err.map_or_else(|| WindowsShellError::NoLauncher, WindowsShellError::Io))
+    Err(last_err.map_or_else(
+        || WindowsShellError::new(WindowsShellErrorKind::NO_LAUNCHER, ""),
+        |err| WindowsShellError::new(WindowsShellErrorKind::IO, err.to_string().as_str()),
+    ))
 }
 
 /// Open path with the given application.
@@ -144,7 +147,7 @@ pub fn that(path: impl AsRef<OsStr>) -> Result<()> {
 ///
 /// A [`WindowsShellError`] is returned on failure. Because different operating systems
 /// handle errors differently it is recommend to not match on a certain error.
-pub fn with(path: impl AsRef<OsStr>, app: impl Into<String>) -> Result<()> {
+pub fn with(path: impl AsRef<OsStr>, app: impl Into<String>) -> WindowsShellResult<()> {
     let mut cmd = with_command(path, app);
     cmd.status_without_output().into_result(cmd)
 }
@@ -234,7 +237,9 @@ pub fn with_command<T: AsRef<OsStr>>(path: T, app: impl Into<String>) -> Command
 /// Open path with the default application in a new thread to assure it's non-blocking.
 ///
 /// See documentation of [`that()`] for more details.
-pub fn that_in_background(path: impl AsRef<OsStr>) -> std::thread::JoinHandle<Result<()>> {
+pub fn that_in_background(
+    path: impl AsRef<OsStr>,
+) -> std::thread::JoinHandle<WindowsShellResult<()>> {
     let path = path.as_ref().to_os_string();
     std::thread::spawn(|| that(path))
 }
@@ -247,7 +252,7 @@ pub fn that_in_background(path: impl AsRef<OsStr>) -> std::thread::JoinHandle<Re
 pub fn with_in_background<T: AsRef<OsStr>>(
     path: T,
     app: impl Into<String>,
-) -> std::thread::JoinHandle<Result<()>> {
+) -> std::thread::JoinHandle<WindowsShellResult<()>> {
     let path = path.as_ref().to_os_string();
     let app = app.into();
     std::thread::spawn(|| with(path, app))
@@ -262,7 +267,7 @@ fn detect_shell() -> WindowsShell {
     })
 }
 
-fn get_shell() -> Result<WindowsShell> {
+fn get_shell() -> WindowsShellResult<WindowsShell> {
     if Command::new("pwsh")
         .arg("-Command")
         .arg("$PSVersionTable.PSVersion")
@@ -301,7 +306,7 @@ fn wrap_in_quotes_string<T: AsRef<OsStr>>(path: T) -> String {
 /// the program ends up to be blocking or want to out-live your app
 ///
 /// See documentation of [`that()`] for more details.
-pub fn that_detached(path: impl AsRef<OsStr>) -> Result<()> {
+pub fn that_detached(path: impl AsRef<OsStr>) -> WindowsShellResult<()> {
     #[cfg(not(feature = "shellexecute"))]
     {
         let mut last_err = None;
@@ -313,7 +318,10 @@ pub fn that_detached(path: impl AsRef<OsStr>) -> Result<()> {
                 Err(err) => last_err = Some(err),
             }
         }
-        Err(last_err.map_or_else(|| WindowsShellError::NoLauncher, WindowsShellError::Io))
+        Err(last_err.map_or_else(
+            || WindowsShellError::new(WindowsShellErrorKind::NO_LAUNCHER, ""),
+            |err| WindowsShellError::new(WindowsShellErrorKind::IO, err.to_string().as_str()),
+        ))
     }
 
     #[cfg(feature = "shellexecute")]
@@ -327,7 +335,7 @@ pub fn that_detached(path: impl AsRef<OsStr>) -> Result<()> {
 /// straightforward error handling.
 ///
 /// See documentation of [`with()`] for more details.
-pub fn with_detached<T: AsRef<OsStr>>(path: T, app: impl Into<String>) -> Result<()> {
+pub fn with_detached<T: AsRef<OsStr>>(path: T, app: impl Into<String>) -> WindowsShellResult<()> {
     #[cfg(not(feature = "shellexecute"))]
     {
         let mut last_err = None;
@@ -343,7 +351,10 @@ pub fn with_detached<T: AsRef<OsStr>>(path: T, app: impl Into<String>) -> Result
             }
         }
 
-        Err(last_err.map_or_else(|| WindowsShellError::NoLauncher, WindowsShellError::Io))
+        Err(last_err.map_or_else(
+            || WindowsShellError::new(WindowsShellErrorKind::NO_LAUNCHER, ""),
+            |err| WindowsShellError::new(WindowsShellErrorKind::IO, err.to_string().as_str()),
+        ))
     }
 
     #[cfg(feature = "shellexecute")]
@@ -356,11 +367,14 @@ trait IntoResult<T> {
     fn into_result(self, cmd: Command) -> T;
 }
 
-impl IntoResult<Result<()>> for std::io::Result<std::process::ExitStatus> {
-    fn into_result(self, cmd: Command) -> Result<()> {
+impl IntoResult<WindowsShellResult<()>> for std::io::Result<std::process::ExitStatus> {
+    fn into_result(self, cmd: Command) -> WindowsShellResult<()> {
         match self {
             Ok(status) if status.success() => Ok(()),
-            Ok(status) => Err(WindowsShellError::CommandFailed(cmd, status)),
+            Ok(status) => Err(WindowsShellError::new(
+                WindowsShellErrorKind::COMMAND_FAILED,
+                format!("{cmd:?} ({})", status).as_str(),
+            )),
             Err(err) => Err(err.into()),
         }
     }
@@ -396,7 +410,7 @@ impl CommandExt for Command {
 }
 
 #[cfg(feature = "shellexecute")]
-fn that_detached_execute<T: AsRef<OsStr>>(path: T) -> Result<()> {
+fn that_detached_execute<T: AsRef<OsStr>>(path: T) -> WindowsShellResult<()> {
     let path = path.as_ref();
     let is_dir = std::fs::metadata(path).map(|f| f.is_dir()).unwrap_or(false);
 
@@ -422,7 +436,10 @@ fn that_detached_execute<T: AsRef<OsStr>>(path: T) -> Result<()> {
 }
 
 #[cfg(feature = "shellexecute")]
-pub fn with_detached_execute<T: AsRef<OsStr>>(path: T, app: impl Into<String>) -> Result<()> {
+pub fn with_detached_execute<T: AsRef<OsStr>>(
+    path: T,
+    app: impl Into<String>,
+) -> WindowsShellResult<()> {
     let app = wide(app.into());
     let path = wide(path);
 
@@ -464,13 +481,16 @@ fn wide<T: AsRef<OsStr>>(input: T) -> Vec<u16> {
 /// or passing incorrect data to the Windows API, which could lead to incorrect results or crashes.
 #[allow(non_snake_case)]
 #[cfg(feature = "shellexecute")]
-unsafe fn ShellExecuteExW(info: *mut ffi::SHELLEXECUTEINFOW) -> Result<()> {
+unsafe fn ShellExecuteExW(info: *mut ffi::SHELLEXECUTEINFOW) -> WindowsShellResult<()> {
     // ShellExecuteExW returns TRUE (i.e 1) on success
     // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecuteexw#remarks
     if ffi::ShellExecuteExW(info) == 1 {
         Ok(())
     } else {
-        Err(WindowsShellError::Io(std::io::Error::last_os_error()))
+        Err(WindowsShellError::new(
+            WindowsShellErrorKind::IO,
+            std::io::Error::last_os_error().to_string().as_str(),
+        ))
     }
 }
 
@@ -494,7 +514,7 @@ unsafe fn SHOpenFolderAndSelectItems(
     pidlfolder: *const ffi::ITEMIDLIST,
     apidl: Option<&[*const ffi::ITEMIDLIST]>,
     dwflags: u32,
-) -> Result<()> {
+) -> WindowsShellResult<()> {
     use std::convert::TryInto;
 
     match ffi::SHOpenFolderAndSelectItems(
@@ -504,9 +524,12 @@ unsafe fn SHOpenFolderAndSelectItems(
         dwflags,
     ) {
         0 => Ok(()),
-        error_code => Err(WindowsShellError::Io(std::io::Error::from_raw_os_error(
-            error_code,
-        ))),
+        error_code => Err(WindowsShellError::new(
+            WindowsShellErrorKind::IO,
+            std::io::Error::from_raw_os_error(error_code)
+                .to_string()
+                .as_str(),
+        )),
     }
 }
 
